@@ -217,6 +217,8 @@ def home():
         user_input = st.text_input("Enter ISIN, Scheme Name, Scheme Code, or ID:")
         result = search_data(data, user_input)
 
+        if st.button("Search"):
+            result = search_data(data, user_input)
         if not result.empty:
             st.write("Matching Results:")
             st.table(result[['scheme_name', 'isin', 'scheme_code', 'ID']])
