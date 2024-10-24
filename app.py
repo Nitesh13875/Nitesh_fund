@@ -4,7 +4,7 @@ import requests
 from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
-from matplotlib_venn import venn2
+from matplotlib_venn import venn2,venn3
 
 ACCESS_TOKEN = "RvAEWi1UeKNRy9mONhee8jMjJr97"
 
@@ -254,17 +254,12 @@ def home():
             # Fetch risk data
             risk_data = fetch_risk_data(selected_id, selected_year)
             display_risk_data(risk_data, selected_year)
-
-            
-
     
     if __name__ == "__main__":
         main()
 
 
 def Holdings():
- 
-
     # Set the title of the app
     st.title("Mutual Fund Holdings Viewer")
 
@@ -339,58 +334,80 @@ def Holdings():
                 st.error(f"Failed to fetch data for ID {fund_id}: {response.status_code}")
         else:
             st.warning("Please enter a Fund ID to fetch data.")
-
-    # Comparison section
+# Comparison section
     st.write("---")
     st.subheader("Fund Overlap Analysis")
-    compare = st.checkbox("Do you want to compare two funds?")
+    compare = st.checkbox("Do you want to compare multiple funds?")
 
     if compare:
-        fund_id_1 = st.text_input("Enter First Fund ID:", placeholder="Example: F00000PDC9")
-        fund_id_2 = st.text_input("Enter Second Fund ID:", placeholder="Example: F00000PDC9")
+        num_funds = st.number_input("Select the number of funds to compare:", min_value=2, max_value=10, value=2)
+
+        fund_ids = []
+        for i in range(num_funds):
+            fund_id = st.text_input(f"Enter Fund ID {i + 1}:", placeholder="Example: F00000PDC9")
+            fund_ids.append(fund_id)
 
         # Add a button to initiate the comparison
         if st.button("Compare Holdings"):
-            if fund_id_1 and fund_id_2:
-                # Fetch data for both funds
-                response_1 = requests.get(f"https://api-global.morningstar.com/sal-service/v1/fund/portfolio/holding/v2/{fund_id_1}/data?premiumNum=100&freeNum=25&hideesg=true&languageId=en&locale=en&clientId=RSIN_SAL&benchmarkId=mstarorcat&component=sal-mip-holdings&version=4.31.0&access_token=iTP1tjYXA0gMrzvFpIK00wZ9m0b4")
-                response_2 = requests.get(f"https://api-global.morningstar.com/sal-service/v1/fund/portfolio/holding/v2/{fund_id_2}/data?premiumNum=100&freeNum=25&hideesg=true&languageId=en&locale=en&clientId=RSIN_SAL&benchmarkId=mstarorcat&component=sal-mip-holdings&version=4.31.0&access_token=iTP1tjYXA0gMrzvFpIK00wZ9m0b4")
+            # Filter out empty fund IDs
+            fund_ids = [fid for fid in fund_ids if fid]
 
-                if response_1.status_code == 200 and response_2.status_code == 200:
-                    data_1 = response_1.json()
-                    data_2 = response_2.json()
+            if len(fund_ids) >= 2:
+                # Fetch data for each fund and store holdings
+                holdings_list = []
+                for fund_id in fund_ids:
+                    response = requests.get(f"https://api-global.morningstar.com/sal-service/v1/fund/portfolio/holding/v2/{fund_id}/data?premiumNum=100&freeNum=25&hideesg=true&languageId=en&locale=en&clientId=RSIN_SAL&benchmarkId=mstarorcat&component=sal-mip-holdings&version=4.31.0&access_token={ACCESS_TOKEN}")
 
-                    # Extract holdings for both funds
-                    holdings_1 = set(holding['securityName'] for holding in data_1.get('equityHoldingPage', {}).get('holdingList', []))
-                    holdings_2 = set(holding['securityName'] for holding in data_2.get('equityHoldingPage', {}).get('holdingList', []))
+                    if response.status_code == 200:
+                        data = response.json()
+                        holdings = set(holding['securityName'] for holding in data.get('equityHoldingPage', {}).get('holdingList', []))
+                        holdings_list.append(holdings)
+                    else:
+                        st.warning(f"Unable to fetch data for Fund ID: {fund_id}")
 
+                if len(holdings_list) == len(fund_ids):
                     # Calculate overlap
-                    overlap = holdings_1.intersection(holdings_2)
+                    overlap = set.intersection(*holdings_list)
 
                     # Display overlap results
-                    st.write(f"### Overlap Between Funds `{fund_id_1}` and `{fund_id_2}`")
+                    st.write(f"### Overlap Between Funds: {', '.join(fund_ids)}")
                     
                     # Create a DataFrame for common holdings
                     if overlap:
                         common_holdings_df = pd.DataFrame(list(overlap), columns=["Common Holdings"])
                         st.table(common_holdings_df)
 
-                        st.write(f"**Number of Common Holdings:** {len(overlap)}") 
-                        st.write(len(holdings_1))
-                        a= (len(overlap) / ((len(holdings_1) + len(holdings_2)))) * 100
-                        st.write(f" percentage of common Holdings: {a}")
-                        # Create Venn Diagram
-                        plt.figure(figsize=(8, 8))
-                        venn2([holdings_1, holdings_2], ('Fund 1', 'Fund 2'))
-                        plt.title('Fund Overlap Analysis', fontsize=16)
+                        st.write(f"**Number of Common Holdings:** {len(overlap)}")
+                        total_holdings = [len(holdings) for holdings in holdings_list]
+                        total_unique_holdings = sum(total_holdings)
+                        percentage_overlap = (len(overlap) / total_unique_holdings) * 100
+                        st.write(f"**Percentage of Common Holdings:** {percentage_overlap:.2f}%")
+
+                        # Create Bar Chart for Total Holdings vs. Common Holdings
+                        plt.figure(figsize=(10, 6))
+                        bar_width = 0.35
+                        index = range(len(fund_ids))
+
+                        # Bar for total holdings
+                        plt.bar(index, total_holdings, bar_width, label='Total Holdings', color='blue')
+                        # Line for common holdings
+                        plt.axhline(y=len(overlap), color='red', linestyle='--', label='Common Holdings')
+
+                        plt.xlabel('Funds')
+                        plt.ylabel('Number of Holdings')
+                        plt.title('Comparison of Fund Holdings', fontsize=16)
+                        plt.xticks(index, fund_ids)
+                        plt.legend()
+
                         st.pyplot(plt)
                     else:
-                        st.write("No common holdings found between the two funds.")
+                        st.write("No common holdings found between the selected funds.")
                 else:
-                    st.warning("Unable to fetch data for one or both Fund IDs.")
+                    st.warning("Could not fetch holdings for all selected funds.")
             else:
-                st.warning("Please enter both Fund IDs to compare.")
+                st.warning("Please enter at least two Fund IDs to compare.")
 
+    
 def about():
         pass
 
@@ -405,9 +422,6 @@ elif page == "Holdings":
 
 elif page == "About":
     about()
-
-
-
 
 
 
